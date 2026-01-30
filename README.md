@@ -1,5 +1,6 @@
 # DICOMビューア 操作マニュアル
 
+## 実行方法
 ```bash
 python main.py
 ```
