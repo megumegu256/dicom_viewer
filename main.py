@@ -594,22 +594,22 @@ class DICOMViewerApp(QMainWindow):
             opacity=1.0,
             name="axial"
         )
-        # Sagittal位置の交差線を描画（赤）
-        line_sagittal = pv.Line((self.current_sagittal_pos * col_spacing, 0, 0),
-                               (self.current_sagittal_pos * col_spacing, height * row_spacing, 0))
+        # Sagittal位置の縦線（赤）
+        x_sag = self.current_sagittal_pos * col_spacing
+        line_sagittal = pv.Line((x_sag, 0, 0), (x_sag, height * row_spacing, 0))
         self.plotter.add_mesh(line_sagittal, color="red", line_width=2, name="line_sagittal")
-        # Coronal位置の交差線を描画（青）
-        line_coronal = pv.Line((0, self.current_coronal_pos * row_spacing, 0),
-                              (width * col_spacing, self.current_coronal_pos * row_spacing, 0))
-        self.plotter.add_mesh(line_coronal, color="cyan", line_width=2, name="line_coronal")
+        # Coronal位置の横線（青）
+        y_cor = self.current_coronal_pos * row_spacing
+        line_coronal = pv.Line((0, y_cor, 0), (width * col_spacing, y_cor, 0))
+        self.plotter.add_mesh(line_coronal, color="blue", line_width=2, name="line_coronal")
 
         # Sagittal（右上）
         self.plotter.subplot(0, 1)
         sagittal_slice = self.slice_processor.get_sagittal_slice(
             self.current_sagittal_pos, self.window_width, self.window_level
         )
+        sagittal_slice = np.flipud(sagittal_slice)  # 上下反転
         grid_sagittal = pv.ImageData()
-        # (num_slices, height) -> (height, num_slices)
         grid_sagittal.dimensions = (sagittal_slice.shape[1], sagittal_slice.shape[0], 1)
         grid_sagittal.spacing = (row_spacing, slice_spacing, 1)
         grid_sagittal.origin = (0, 0, 0)
@@ -622,22 +622,22 @@ class DICOMViewerApp(QMainWindow):
             opacity=1.0,
             name="sagittal"
         )
-        # Axial位置の交差線を描画（緑）
-        line_axial_sag = pv.Line((0, 0, self.current_axial_slice * slice_spacing),
-                                (height * row_spacing, 0, self.current_axial_slice * slice_spacing))
+        # Axial位置の横線（緑）: coronal断面と同じY座標計算
+        y_ax = (sagittal_slice.shape[0] - 1 - self.current_axial_slice) * slice_spacing
+        line_axial_sag = pv.Line((0, y_ax, 0), (sagittal_slice.shape[1] * row_spacing, y_ax, 0))
         self.plotter.add_mesh(line_axial_sag, color="lime", line_width=2, name="line_axial_sag")
-        # Coronal位置の交差線を描画（青）
-        line_coronal_sag = pv.Line((0, self.current_coronal_pos * row_spacing, 0),
-                                  (0, self.current_coronal_pos * row_spacing, num_slices * slice_spacing))
-        self.plotter.add_mesh(line_coronal_sag, color="cyan", line_width=2, name="line_coronal_sag")
+        # Coronal位置の縦線（青）
+        x_cor = self.current_coronal_pos * row_spacing
+        line_coronal_sag = pv.Line((x_cor, 0, 0), (x_cor, sagittal_slice.shape[0] * slice_spacing, 0))
+        self.plotter.add_mesh(line_coronal_sag, color="blue", line_width=2, name="line_coronal_sag")
 
         # Coronal（左下）
         self.plotter.subplot(1, 0)
         coronal_slice = self.slice_processor.get_coronal_slice(
             self.current_coronal_pos, self.window_width, self.window_level
         )
+        coronal_slice = np.flipud(coronal_slice)  # 上下反転
         grid_coronal = pv.ImageData()
-        # (num_slices, width) -> (width, num_slices)
         grid_coronal.dimensions = (coronal_slice.shape[1], coronal_slice.shape[0], 1)
         grid_coronal.spacing = (col_spacing, slice_spacing, 1)
         grid_coronal.origin = (0, 0, 0)
@@ -650,13 +650,13 @@ class DICOMViewerApp(QMainWindow):
             opacity=1.0,
             name="coronal"
         )
-        # Axial位置の交差線を描画（緑）
-        line_axial_cor = pv.Line((0, 0, self.current_axial_slice * slice_spacing),
-                                (width * col_spacing, 0, self.current_axial_slice * slice_spacing))
+        # Axial位置の横線（緑）
+        y_ax_cor = (coronal_slice.shape[0] - 1 - self.current_axial_slice) * slice_spacing
+        line_axial_cor = pv.Line((0, y_ax_cor, 0), (coronal_slice.shape[1] * col_spacing, y_ax_cor, 0))
         self.plotter.add_mesh(line_axial_cor, color="lime", line_width=2, name="line_axial_cor")
-        # Sagittal位置の交差線を描画（赤）
-        line_sagittal_cor = pv.Line((self.current_sagittal_pos * col_spacing, 0, 0),
-                                   (self.current_sagittal_pos * col_spacing, 0, num_slices * slice_spacing))
+        # Sagittal位置の縦線（赤）
+        x_sag_cor = self.current_sagittal_pos * col_spacing
+        line_sagittal_cor = pv.Line((x_sag_cor, 0, 0), (x_sag_cor, coronal_slice.shape[0] * slice_spacing, 0))
         self.plotter.add_mesh(line_sagittal_cor, color="red", line_width=2, name="line_sagittal_cor")
 
         # 右下は空にする
@@ -669,7 +669,6 @@ class DICOMViewerApp(QMainWindow):
             self.plotter.camera_position = 'xy'
             self.plotter.camera.parallel_projection = True
             self.plotter.reset_camera()
-            # 画像を最大限拡大（余白を最小化）
             self.plotter.camera.zoom(1.4)
     
     def _display_3d_volume(self) -> None:
