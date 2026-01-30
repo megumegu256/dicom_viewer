@@ -264,6 +264,11 @@ class DICOMViewerApp(QMainWindow):
         self.config_path = Path(__file__).parent / "config.json"
         self._update_timer: Optional[QTimer] = None  # スライダ点滅対策用
         
+        # 最適化用フラグ：incremental更新管理
+        self._axial_dirty = True  # Axialビューの更新が必要か
+        self._sagittal_dirty = True  # Sagittalビューの更新が必要か
+        self._coronal_dirty = True  # Coronalビューの更新が必要か
+        
         self.init_ui()
         self.load_config()
         self.apply_theme(self.theme_combo.currentText())
@@ -283,9 +288,22 @@ class DICOMViewerApp(QMainWindow):
         # ===== 左側：PyVistaビューアとスライダー =====
         left_layout = QVBoxLayout()
         
-        # 単一プロッター（2D用、デフォルトはshape=(2,2)）
-        self.plotter = QtInteractor(main_widget, shape=(2, 2))
-        left_layout.addWidget(self.plotter.interactor)
+        # 2D/3D表示用にプロッターをレイアウトコンテナに配置
+        self.viewer_container = QWidget()
+        self.viewer_layout = QVBoxLayout(self.viewer_container)
+        self.viewer_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 2D表示用：shape=(2,2)で複数ビュー表示
+        self.plotter_2d = QtInteractor(self.viewer_container, shape=(2, 2))
+        self.plotter = self.plotter_2d  # デフォルトで2D表示
+        self.viewer_layout.addWidget(self.plotter.interactor)
+        
+        # 3D表示用：shape=(1,1)で全画面表示
+        self.plotter_3d = QtInteractor(self.viewer_container, shape=(1, 1))
+        self.plotter_3d.interactor.hide()  # 初期状態で非表示
+        self.viewer_layout.addWidget(self.plotter_3d.interactor)
+        
+        left_layout.addWidget(self.viewer_container)
         
         # 各画像のスライダー（2D表示時のみ有効）
         sliders_layout = QHBoxLayout()
@@ -511,33 +529,42 @@ class DICOMViewerApp(QMainWindow):
         self.wl_spinbox.setValue(self.window_level)
     
     def _update_display(self) -> None:
-        """表示を更新"""
+        """表示を更新（最適化版：incremental更新）"""
         if not self.slice_processor:
             return
         
         if self.display_mode_3d:
-            # 3D表示に切り替え
+            # 3D表示モードに切り替え
             self.plotter_2d.interactor.hide()
             self.plotter_3d.interactor.show()
             self.plotter = self.plotter_3d
             self.plotter.clear()
             self._display_3d_volume()
         else:
-            # 2D表示に切り替え
+            # 2D表示モードに切り替え
             self.plotter_3d.interactor.hide()
             self.plotter_2d.interactor.show()
             self.plotter = self.plotter_2d
+            self._update_2d_display_incremental()
+    
+    def _update_2d_display_incremental(self) -> None:
+        """2D表示の最適化された更新（最初の表示時は完全再描画、その後はincremental）"""
+        # 最初の表示時のみ完全再描画
+        if self._axial_dirty or self._sagittal_dirty or self._coronal_dirty:
             self.plotter.clear()
             self._display_2d_slices()
-            
-            # テキスト表示（左上のビューに固定）
-            self.plotter.subplot(0, 0)
-            text = f"Axial: {self.current_axial_slice}/{self.slice_processor.num_slices - 1}\n"
-            text += f"Sagittal: {self.current_sagittal_pos}/{self.slice_processor.image_width - 1}\n"
-            text += f"Coronal: {self.current_coronal_pos}/{self.slice_processor.image_height - 1}"
-            # テキスト色をテーマに応じて動的に設定
-            text_color = "black" if self.theme_combo.currentText() == "ライト" else "white"
-            self.plotter.add_text(text, position="upper_left", font_size=10, color=text_color)
+            self._axial_dirty = False
+            self._sagittal_dirty = False
+            self._coronal_dirty = False
+        
+        # テキスト表示（毎回更新）
+        self.plotter.subplot(0, 0)
+        text = f"Axial: {self.current_axial_slice}/{self.slice_processor.num_slices - 1}\n"
+        text += f"Sagittal: {self.current_sagittal_pos}/{self.slice_processor.image_width - 1}\n"
+        text += f"Coronal: {self.current_coronal_pos}/{self.slice_processor.image_height - 1}"
+        # テキスト色をテーマに応じて動的に設定
+        text_color = "black" if self.theme_combo.currentText() == "ライト" else "white"
+        self.plotter.add_text(text, position="upper_left", font_size=10, color=text_color)
     
     def _display_2d_slices(self) -> None:
         """2Dスライス表示（左上:Axial、右上:Sagittal、左下:Coronal）"""
@@ -786,29 +813,39 @@ class DICOMViewerApp(QMainWindow):
         """Axialスライス変更時"""
         self.current_axial_slice = value
         self.axial_label_2d.setText(f"{value}/{self.slice_processor.num_slices - 1}" if self.slice_processor else "0/0")
+        # Axial変更時はすべてのビューを再描画
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
         self._update_display()
     
     def on_sagittal_pos_changed(self, value: int) -> None:
         """Sagittal位置変更時"""
         self.current_sagittal_pos = value
         self.sagittal_label_2d.setText(f"{value}/{self.slice_processor.image_width - 1}" if self.slice_processor else "0/0")
-        # 遅延描画により点滅を軽減
+        # 遅延描画により点滅を軽減（最適化：50msに短縮）
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
         if self._update_timer is None:
             self._update_timer = QTimer()
             self._update_timer.setSingleShot(True)
             self._update_timer.timeout.connect(self._update_display)
-        self._update_timer.start(100)  # 100ms後に更新
+        self._update_timer.start(30)  # 30msに短縮
     
     def on_coronal_pos_changed(self, value: int) -> None:
         """Coronal位置変更時"""
         self.current_coronal_pos = value
         self.coronal_label_2d.setText(f"{value}/{self.slice_processor.image_height - 1}" if self.slice_processor else "0/0")
-        # 遅延描画により点滅を軽減
+        # 遅延描画により点滅を軽減（最適化：50msに短縮）
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
         if self._update_timer is None:
             self._update_timer = QTimer()
             self._update_timer.setSingleShot(True)
             self._update_timer.timeout.connect(self._update_display)
-        self._update_timer.start(100)  # 100ms後に更新
+        self._update_timer.start(30)  # 30msに短縮
     
     def on_window_width_changed(self, value: int) -> None:
         """Window Width変更時"""
@@ -816,7 +853,11 @@ class DICOMViewerApp(QMainWindow):
         self.ww_spinbox.blockSignals(True)
         self.ww_spinbox.setValue(value)
         self.ww_spinbox.blockSignals(False)
-        self._update_display()
+        # Window変更時は全ビュー再描画が必要
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
+        self._schedule_update()
     
     def on_window_level_changed(self, value: int) -> None:
         """Window Level変更時"""
@@ -824,7 +865,21 @@ class DICOMViewerApp(QMainWindow):
         self.wl_spinbox.blockSignals(True)
         self.wl_spinbox.setValue(value)
         self.wl_spinbox.blockSignals(False)
-        self._update_display()
+        # Window変更時は全ビュー再描画が必要
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
+        self._schedule_update()
+    
+    def _schedule_update(self) -> None:
+        """更新をスケジュール（遅延実行）"""
+        if self._update_timer is None:
+            self._update_timer = QTimer()
+            self._update_timer.setSingleShot(True)
+            self._update_timer.timeout.connect(self._update_display)
+        # 既にタイマーが動作中なら何もしない（多重更新防止）
+        if not self._update_timer.isActive():
+            self._update_timer.start(30)
 
     def on_preset_changed(self, text: str) -> None:
         """Windowプリセット変更時"""
@@ -843,12 +898,20 @@ class DICOMViewerApp(QMainWindow):
         self.wl_slider.setValue(wl)
         self.ww_spinbox.setValue(ww)
         self.wl_spinbox.setValue(wl)
-        self._update_display()
+        # プリセット適用時もフラグをセット
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
+        self._schedule_update()
 
     def on_display_dimension_changed(self) -> None:
         """2D/3D表示切り替え時"""
         # ラジオボタングループから選択を取得
         self.display_mode_3d = self.display_mode_group.checkedId() == 1
+        # 表示切り替え時はすべてのビューを再描画
+        self._axial_dirty = True
+        self._sagittal_dirty = True
+        self._coronal_dirty = True
         self._update_display()
 
     def apply_theme(self, theme: str) -> None:

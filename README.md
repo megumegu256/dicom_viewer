@@ -1,14 +1,117 @@
-# DICOM Viewer
+# DICOMビューア 操作マニュアル
 
-PyVista-based single-file DICOM volume viewer. Loads the series under dcms/ and renders a 3D volume with axes and bounding box. Logs and screenshots are written under logs/.
+```bash
+python main.py
+```
 
-## Usage
-- Install dependencies: `pip install pydicom pyvista numpy`
-- Run viewer (default dcms folder): `python main.py`
-- Skip rendering (load only): `python main.py --no-render`
-- Save screenshot: `python main.py --screenshot logs/volume.png`
-- In the viewer: adjust Window/Level via sliders, press `c` to cycle colormap, `b` to toggle bounding box, `p` to save an interactive screenshot to logs/interactive.png.
+## 基本操作
 
-## 変更履歴
-- 2026-01-27: Add interactive GUI controls (window/level sliders, cmap cycle, bbox toggle, screenshot hotkey) and text status overlay.
-- 2026-01-27: Add main.py DICOM viewer, logging to logs/, README usage and changelog.
+### 1. DICOMファイルの読み込み
+
+1. 「DICOMフォルダ選択」ボタンをクリックする
+2. DICOMファイルが格納されたフォルダを選択する
+3. ファイルが自動的に読み込まれ、画像が表示される
+
+### 2. 表示モードの切り替え
+
+#### 2D表示モード
+- 「2D表示」ラジオボタンを選択する
+- Axial（横断面）、Sagittal（矢状断面）、Coronal（冠状断面）の3方向が2×2のグリッドで同時に表示される
+- 各スライスの位置が色付きの十字線（クロスヘア）で可視化される
+  - 赤色：Axial位置
+  - 青色：Sagittal位置
+  - 緑色：Coronal位置
+
+#### 3D表示モード
+- 「3D表示」ラジオボタンを選択する
+- ボリュームレンダリングによる3D画像が全画面で表示される
+- マウス操作で自由に回転・拡大が可能である
+
+### 3. スライス位置の調整（2D表示時）
+- 左側の「Axial」スライダーを動かすと、横断面の位置が変わる
+- スライダー上部に現在のスライス番号が表示され
+- 「Sagittal」スライダーを動かすと、矢状断面の位置が変わる
+
+### 4. ウィンドウ幅/ウィンドウレベルの調整
+
+DICOMデータの表示コントラストを調整できる。
+
+#### Window Width（ウィンドウ幅）
+- コントラストの範囲を制御する
+- 値を大きくすると広い範囲の濃度値が表示され、コントラストが低くなる
+- 値を小さくすると狭い範囲の濃度値が表示され、コントラストが高くなる
+
+#### Window Level（ウィンドウレベル）
+- 表示する濃度値の中心を制御する
+- 値を変えることで、明るさが調整される
+
+#### 医療用プリセット
+
+臨床でよく使用される表示設定がプリセットとして用意されている。
+
+- **肺野（Lung）**: WW=1500, WL=-600
+  - 肺の観察に適した設定
+- **縦隔（Mediastinum）**: WW=350, WL=50
+  - 心臓や血管などの軟部組織の観察に適した設定
+- **骨（Bone）**: WW=2000, WL=300
+  - 骨構造の観察に適した設定
+- **脳（Brain）**: WW=80, WL=40
+  - 脳組織の観察に適した設定
+
+「プリセット適用」ボタンをクリックし、目的に応じたプリセットを選択すると、自動的にウィンドウ幅/レベルが設定される。
+
+### 6. 3D表示の操作
+
+3D表示モードでは、以下のマウス操作が可能である。
+
+- **左ドラッグ**: 3D画像を回転させる
+- **右ドラッグ**: 3D画像を移動させる
+- **マウスホイール**: 3D画像を拡大・縮小する
+
+### 7. データ情報の確認
+
+右側のパネルには、読み込んだDICOMデータの情報が表示される。
+
+- スライス数
+- ボクセルサイズ（x, y, z方向の解像度）
+- データの最小値・最大値
+- 現在のウィンドウ幅/レベル
+
+## 画面構成
+
+### 左側パネル
+- PyVistaビューア（画像表示領域）
+- スライス位置調整スライダー（3本）
+
+### 右側パネル
+- DICOMフォルダ選択ボタン
+- 表示モード切り替え（2D/3D ラジオボタン）
+- ウィンドウ幅/レベル調整
+- 医療用プリセット選択
+- データ情報表示
+
+## 技術仕様
+
+### 使用ライブラリ
+- **PyQt5 5.15.11**: GUIフレームワーク
+- **pyvistaqt 0.11.3**: PyVistaとQt5の統合
+- **pyvista 0.46.5**: 3D可視化
+- **pydicom 3.0.1**: DICOMファイル読み込み
+- **numpy**: 数値計算
+
+### DICOMウィンドウング計算式
+
+表示される輝度値は、以下の式で計算される：
+
+```
+Min = Window Level - Window Width / 2
+Max = Window Level + Window Width / 2
+```
+
+HU値（Hounsfield Unit）がMinとMaxの間にある場合、0〜255の範囲にスケーリングされて表示される。
+
+### パフォーマンス最適化
+
+- スライダー操作時は30msのタイマーでイベントをバッチ処理
+- 2D表示では変更があったビューのみを更新するインクリメンタル更新方式を採用
+- ウィンドウ幅/レベル変更時は複数イベントを統合して処理
