@@ -680,22 +680,36 @@ class DICOMViewerApp(QMainWindow):
         x_sag = self.current_sagittal_pos * col_spacing
         y_cor = self.current_coronal_pos * row_spacing
         z_ax = self.current_axial_slice * slice_spacing
-        # --- 交点位置にだけ3軸クロスヘア（X,Y,Z方向に短い線） ---
-        cross_length = min(width * col_spacing, height * row_spacing, num_slices * slice_spacing) * 0.05
-        cx, cy, cz = x_sag, y_cor, z_ax
-        # 既存クロスヘアを消去
-        for name in ["cross_x", "cross_y", "cross_z"]:
+        # 3D直線描画用の中心座標
+        cx = x_sag
+        cy = y_cor
+        cz = z_ax
+        # --- 3D断面直線を全て削除し、各スライス面に色付き半透明平面を表示 ---
+        # 既存のスライス面を消去
+        for name in ["axial_plane3d", "sagittal_plane3d", "coronal_plane3d"]:
             if name in self.plotter.actors:
                 self.plotter.remove_actor(self.plotter.actors[name])
-        # X軸（赤）: Y,Zは交点のまま、Xだけ全体
-        line_x = pv.Line((0, cy, cz), (width * col_spacing, cy, cz))
-        self.plotter.add_mesh(line_x, color="red", line_width=5, name="cross_x")
-        # Y軸（青）: X,Zは交点のまま、Yだけ全体
-        line_y = pv.Line((cx, 0, cz), (cx, height * row_spacing, cz))
-        self.plotter.add_mesh(line_y, color="blue", line_width=5, name="cross_y")
-        # Z軸（緑）: X,Yは交点のまま、Zだけ全体
-        line_z = pv.Line((cx, cy, 0), (cx, cy, num_slices * slice_spacing))
-        self.plotter.add_mesh(line_z, color="lime", line_width=5, name="cross_z")
+
+        # Axial面（Z=cz）: XY平面（緑・半透明）
+        surf_axial = pv.Plane(center=(width * col_spacing / 2, height * row_spacing / 2, cz),
+                              direction=(0, 0, 1),
+                              i_size=width * col_spacing,
+                              j_size=height * row_spacing)
+        self.plotter.add_mesh(surf_axial, color="lime", opacity=0.3, name="axial_plane3d")
+
+        # Sagittal面（X=cx）: YZ平面（赤・半透明）
+        surf_sagittal = pv.Plane(center=(cx, height * row_spacing / 2, num_slices * slice_spacing / 2),
+                                 direction=(1, 0, 0),
+                                 i_size=height * row_spacing,
+                                 j_size=num_slices * slice_spacing)
+        self.plotter.add_mesh(surf_sagittal, color="red", opacity=0.3, name="sagittal_plane3d")
+
+        # Coronal面（Y=cy）: XZ平面（青・半透明）
+        surf_coronal = pv.Plane(center=(width * col_spacing / 2, cy, num_slices * slice_spacing / 2),
+                                direction=(0, 1, 0),
+                                i_size=width * col_spacing,
+                                j_size=num_slices * slice_spacing)
+        self.plotter.add_mesh(surf_coronal, color="blue", opacity=0.3, name="coronal_plane3d")
         """3Dボリュームレンダリング（全面に表示）"""
         # 3D用プロッター（shape=(1,1)）で全画面表示
 
