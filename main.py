@@ -672,30 +672,54 @@ class DICOMViewerApp(QMainWindow):
             self.plotter.camera.zoom(1.4)
     
     def _display_3d_volume(self) -> None:
+        # 必要な値を取得
+        col_spacing, row_spacing, slice_spacing = self.slice_processor.spacing
+        width = self.slice_processor.image_width
+        height = self.slice_processor.image_height
+        num_slices = self.slice_processor.num_slices
+        x_sag = self.current_sagittal_pos * col_spacing
+        y_cor = self.current_coronal_pos * row_spacing
+        z_ax = self.current_axial_slice * slice_spacing
+        # --- 交点位置にだけ3軸クロスヘア（X,Y,Z方向に短い線） ---
+        cross_length = min(width * col_spacing, height * row_spacing, num_slices * slice_spacing) * 0.05
+        cx, cy, cz = x_sag, y_cor, z_ax
+        # 既存クロスヘアを消去
+        for name in ["cross_x", "cross_y", "cross_z"]:
+            if name in self.plotter.actors:
+                self.plotter.remove_actor(self.plotter.actors[name])
+        # X軸（赤）: Y,Zは交点のまま、Xだけ全体
+        line_x = pv.Line((0, cy, cz), (width * col_spacing, cy, cz))
+        self.plotter.add_mesh(line_x, color="red", line_width=5, name="cross_x")
+        # Y軸（青）: X,Zは交点のまま、Yだけ全体
+        line_y = pv.Line((cx, 0, cz), (cx, height * row_spacing, cz))
+        self.plotter.add_mesh(line_y, color="blue", line_width=5, name="cross_y")
+        # Z軸（緑）: X,Yは交点のまま、Zだけ全体
+        line_z = pv.Line((cx, cy, 0), (cx, cy, num_slices * slice_spacing))
+        self.plotter.add_mesh(line_z, color="lime", line_width=5, name="cross_z")
         """3Dボリュームレンダリング（全面に表示）"""
         # 3D用プロッター（shape=(1,1)）で全画面表示
-        
+
         # 3D volume データの構築（Windowing適用）
         volume_data = []
         for i in range(self.slice_processor.num_slices):
             slice_data = self.slice_processor.get_axial_slice(i, self.window_width, self.window_level)
             volume_data.append(slice_data)
         volume_data = np.array(volume_data, dtype=np.uint8)
-        
+
         # PyVista ImageData へ変換（test_main.pyを参考）
         # Reorder to (x, y, z) for VTK/PyVista
         vol_for_vtk = np.transpose(volume_data, (2, 1, 0))
-        
+
         grid = pv.ImageData()
         grid.dimensions = vol_for_vtk.shape
-        
+
         # スペーシングを設定（test_main.py準拠）
         grid.spacing = self.slice_processor.spacing
         grid.origin = (0.0, 0.0, 0.0)
-        
+
         # データをポイントデータとして設定（Fortran順）
         grid.point_data["values"] = vol_for_vtk.flatten(order='F')
-        
+
         # インタラクションを有効化（3D表示では回転などの操作が必要）
         self.plotter.enable()
         
@@ -725,6 +749,36 @@ class DICOMViewerApp(QMainWindow):
         self.plotter.camera.zoom(1.2)
         self.plotter.camera.azimuth = 45
         self.plotter.camera.elevation = 30
+
+        # --- 3Dクロスヘア（現在位置の3軸直線） ---
+        width = self.slice_processor.image_width
+        height = self.slice_processor.image_height
+        num_slices = self.slice_processor.num_slices
+        col_spacing, row_spacing, slice_spacing = self.slice_processor.spacing
+
+        # Axial（Z軸）位置（緑）
+        z_ax = self.current_axial_slice * slice_spacing
+        line_axial = pv.Line(
+            (0, 0, z_ax),
+            (width * col_spacing, 0, z_ax)
+        )
+        self.plotter.add_mesh(line_axial, color="lime", line_width=3, name="3d_axial_line")
+
+        # Sagittal（X軸）位置（赤）
+        x_sag = self.current_sagittal_pos * col_spacing
+        line_sagittal = pv.Line(
+            (x_sag, 0, 0),
+            (x_sag, height * row_spacing, 0)
+        )
+        self.plotter.add_mesh(line_sagittal, color="red", line_width=3, name="3d_sagittal_line")
+
+        # Coronal（Y軸）位置（青）
+        y_cor = self.current_coronal_pos * row_spacing
+        line_coronal = pv.Line(
+            (0, y_cor, 0),
+            (0, y_cor, num_slices * slice_spacing)
+        )
+        self.plotter.add_mesh(line_coronal, color="blue", line_width=3, name="3d_coronal_line")
     
     def _add_slice_planes_3d(self) -> None:
         """スライス面を表示（3Dモード）"""
